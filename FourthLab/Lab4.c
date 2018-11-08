@@ -1036,7 +1036,8 @@ while(1){
   }
 
   // Brightness of LED based off Photoresistor
-  OCR2  = 395 + (2 * (450 - ADCH));	   
+  
+  OCR2  = 300 + (3 * (450 - ADCH));	   
 
   // Turn ON alarm if SNOOZE timedout
   if(snoozeFlag == SNOOZEALARM)
