@@ -974,7 +974,7 @@ while(1){
   // Enter Setting mode (sets time or alarm)
   if(currentButtonsPressed == 0x01)
   {
-      alarmValue     = AlarmSetMode(alarmOffset);
+      alarmValue   = AlarmSetMode(alarmOffset);
       displayValue = alarmValue;   
   // Buttons (2):
   // Restart Mode (restarts everything) 
@@ -1000,6 +1000,8 @@ while(1){
       alarmActivated = ON;
       segment_data[2] &= 0xFB;      
       currentButtonsPressed = (0x00);
+      clear_display();
+      string2lcd("ALARM");
   
   // Buttons (3):
   // SNOOZE if Alarm is Set/On    
@@ -1009,7 +1011,8 @@ while(1){
       {
         TCCR1B &= (0 << CS11);
         TCCR1B &= (0 << CS12);
-        snoozeFlag = SNOOZEON;	
+        OCR3C   = 0;
+	snoozeFlag = SNOOZEON;	
         alarmSET = ON;
       }
       currentButtonsPressed = (0x00);
@@ -1033,7 +1036,7 @@ while(1){
   }
 
   // Brightness of LED based off Photoresistor
-  OCR2  = 350 + (2 * (ADCH - 350));	   
+  OCR2  = 395 + (2 * (450 - ADCH));	   
 
   // Turn ON alarm if SNOOZE timedout
   if(snoozeFlag == SNOOZEALARM)
@@ -1043,7 +1046,7 @@ while(1){
 
   // Alarm is reached and activated, either by timer or by snooze reached
   // Play alarm
-  if(alarmActivated && ((currentTime == alarmValue) || (snoozeFlag == SNOOZEALARM)) && (snoozeFlag != SNOOZEON))
+  if(alarmActivated && ((currentTime == alarmValue) || (snoozeFlag == SNOOZEALARM)) && (snoozeFlag != SNOOZEON) && (currentButtonsPressed != 0x01))
   {
     TCCR1B |= (1 << WGM12) | (1<<CS11) | (1<<CS10); 		//CTC mode clear at TOP immediate
     OCR3C   = VolumeSetMode();
@@ -1051,7 +1054,7 @@ while(1){
   }
   
   // Display 'ALARM' on LCD
-  if(alarmON && alarmSET)
+  if(alarmActivated && alarmSET)
   {
     music_on();
     clear_display();
