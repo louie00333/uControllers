@@ -26,7 +26,6 @@
 #define F_DIGIT     0b10001110
 #define DP_DIGIT    0b01111111
 #define COLON_DIGIT 0b00000100
-#define F_CPU 16000000 // cpu speed in hertz 
 #define ON 1
 #define OFF 0
 #define CW 1
@@ -37,6 +36,8 @@
 #include <avr/io.h>
 #include <util/delay.h>
 #include <avr/interrupt.h>
+#include <stdlib.h>
+#include "hd44780.h"
 
 // holds data to be sent to the segments. logic zero turns segment on
 uint8_t segment_data[5] = {255,255,255,255,255}; 
@@ -64,8 +65,8 @@ uint16_t SPI_read(uint8_t currentBarGraph){
   PORTB &= 0x7F;
   SPDR = currentBarGraph;
   while (bit_is_clear(SPSR,SPIF)){} //wait till 8 bits have been sent
-  PORTD = 0xFF;
-  PORTD = 0x00;
+  //PORTD = 0xFF;
+  //PORTD = 0x00;
   PORTE = 0x00;
   PORTE = 0xFF;
   return(SPDR); //return incoming data from SPDR
@@ -186,7 +187,7 @@ uint8_t ButtonCheck(uint8_t buttonMode)
   PORTB = 0x70; 
   uint8_t buttonLoop = 0;
   _delay_us(10);		//BUG"Added delay to get first button to work, need better fix
-  while(buttonLoop < 3)
+  while(buttonLoop < 8)
   {     
     if(chk_buttons(buttonLoop))
     {
@@ -196,41 +197,6 @@ uint8_t ButtonCheck(uint8_t buttonMode)
   }
   DDRA = 0xFF;
   return buttonMode;
-}
-//***********************************************************************************
-//                     HexConversion(uint8_t currentButtonsPressed)                                    
-// Checks if the 3rd button is pressed for changing HEX and DEC mode
-//***********************************************************************************
-uint8_t HexConversion(uint8_t currentButtonsPressed)
-{
-  if(0 == (currentButtonsPressed & 0x04))
-  { 
-    return 0; 
-  }
-  return 1;
-}
-//***********************************************************************************
-//                     ClockDisplayMode(uint8_t buttonMode)                                    
-// Changes the Mode the display value should be in
-// 1 -> Set/Select Alarm 
-// Takes in the current value outputted and returns the adjusted value based on the number
-//***********************************************************************************
-uint8_t ClockDisplayMode(uint8_t buttonMode)
-{
-  switch(buttonMode)
-  {
-    case 0:
-      return 1;
-    /*
-    case 1: 
-      return 2;
-    case 2:
-      return 4;
-    case 3:
-      return 0;
-    */
-  }
-  return 5;
 }
 
 //***********************************************************************************
@@ -291,16 +257,6 @@ int8_t EncoderValueDirection(uint8_t currentEncoderValue)
 }
 
 //***********************************************************************************
-//                                   uint8_t ButtonUtility()                                    
-// Toggles the button presses by the user
-// Decides functionality of each button press
-//*********************************************************************************
-void ButtonUtility()
-{
-
-}
-
-//***********************************************************************************
 //                                   ISR(TIMER0_OVF_vect)                                    
 // Triggered when TimerCounter0 overflows (every second)
 // Toggles COLON bits
@@ -338,156 +294,222 @@ ISR(TIMER0_OVF_vect)
 // Triggered when TimerCounter1 overflows
 //
 //*********************************************************************************
-ISR(TIMER1_OVF_vect)
+ISR(TIMER1_COMPA_vect)
 { 
-  //secondsFlag ^= 0x01;
+  PORTD ^= 0b10000000;
 }
 //***********************************************************************************
-//                                   uint16_t AlarmSet(uint8_t)                                    
+//                                   uint16_t AlarmSet()                                    
 // Function entered when the user presses the first button on the button board
 // loops until user to inputs time (w/ encoder)
 // Once user presses same button, Alarm is set and function is exitted// 
 //*********************************************************************************
-uint16_t AlarmSetMode()
+uint16_t AlarmSetMode(uint8_t alarmOffset)
 {
   static uint8_t  currentEncoderValue  = 0;
   static uint16_t encodersDisplayValue  = 0;
   int8_t currentAdjustmentValue = 0;
-  
+  static uint16_t  offsetVal = 1439;
   currentEncoderValue = (SPI_read(currentAdjustmentValue));  
   currentAdjustmentValue = EncoderValueDirection(currentEncoderValue);
   encodersDisplayValue += currentAdjustmentValue;
   // Checks if the clock will roll backwards behind 0
   // 1439 is clock time for 23 : 59
+  if(!alarmOffset)
+  {
+    offsetVal = 1439;
+  }else{
+    offsetVal = 779;  
+  }
+
   if((encodersDisplayValue == 0) && (currentAdjustmentValue == CCW)) 
   {
-    encodersDisplayValue = 1439;
-  }else if(encodersDisplayValue > 1439)
+    encodersDisplayValue = offsetVal;
+  }else if(encodersDisplayValue > offsetVal)
   {
-    encodersDisplayValue = 0;
+    if(!offsetVal){ encodersDisplayValue = 0;}
+    else{encodersDisplayValue = 0;}//	    encodersDisplayValue = 60;}
   }
   return encodersDisplayValue;
 }
-
 //***********************************************************************************
-//                                   uint16_t AlarmSet(uint8_t)                                    
-// Function entered when the user presses the first button on the button board
-// loops until user to inputs time (w/ encoder)
-// Once user presses same button, Alarm is set and function is exitted// 
+//                                   uint16_t VolumeSetMode()                                    
+// Default functiond when in Clock mode
+// Adjusts volume OCR3C (w/ encoder)
 //*********************************************************************************
-uint16_t ClockSetMode()
+uint16_t VolumeSetMode()
 {
-  uint8_t  currentEncoderValue  = 0;
-  uint16_t encodersDisplayValue  = 0;
+  static uint8_t  currentEncoderValue  = 0;
+  static uint16_t encodersVolumeValue  = 0xE0;
   int8_t currentAdjustmentValue = 0;
   
   currentEncoderValue = (SPI_read(currentAdjustmentValue));  
   currentAdjustmentValue = EncoderValueDirection(currentEncoderValue);
-  encodersDisplayValue += currentAdjustmentValue;
-  // Checks if the clock will roll backwards behind 0
-  // 1439 is clock time for 23 : 59
-  if((encodersDisplayValue == 0) && (currentAdjustmentValue == CCW)) 
+  encodersVolumeValue += currentAdjustmentValue;
+  if((encodersVolumeValue == 0) && (currentAdjustmentValue == CCW)) 
   {
-    encodersDisplayValue = 1439;
-  }else if(encodersDisplayValue > 1439)
+    encodersVolumeValue = 0xFF;
+  }else if(encodersVolumeValue > 0xFF)
   {
-    encodersDisplayValue = 0;
+    encodersVolumeValue = 0;
   }
-  return encodersDisplayValue;
+  return encodersVolumeValue*2;
 }
-//***********************************************************************************
-int main()
-{
 
-//TODO:
-//Initialize
+//***********************************************************************************
+//				void init()
+// Initialize all of the registers at the start of main
+//
+//***********************************************************************************
+void init()
+{
+//  TCNT0 - Norm Mode | Using external 32kHz clock | 128 Prescale	!Count to 250 using uint8_t to reach 1 second for clock!
 //  TCNT1 - CTC  Mode | Pick freuquency      | Output too PD7		!Outputs to summing amp, which gets outputted to speaker!
 //  TCNT2 - Fast PWM  | Output to PB7 (OC2)  				!Controls brightness of LED Display!
 //  TCNT3 - Fast PWM  | Output to PE5 (OC3C)				!Controls volume to Audio Amp!
-DDRA  = 0xFF;	      //set port A as input  				
-DDRB  = 0xFF; 	      //set port B as outputs
-DDRD  = (1 << PD2);   //Sets Port pin2 D to output
-DDRE  = (1 << PE6);   //Sets Port pin6 E to output
-PORTD = 0x00;   //set port D to LOW
-PORTB = 0x10;   //set port B to start with LED1  	
-PORTE = 0xFF;
-//  TCNT0 - Norm Mode | Using external 32kHz clock | 128 Prescale	!Count to 250 using uint8_t to reach 1 second for clock!
+DDRA  = 0xFF;	      		    //set port A as input  				
+DDRB  = 0xFF; 	      		    //set port B as outputs
+DDRD  |= (1 << PD7);   		    //Sets Port pin2 D to output
+DDRE  |= (1 << PE5) | (1 << PE6);   //Sets Port pin6 E to output
+PORTD = 0x00;   		    //set port D to LOW
+PORTB = 0x10;   		    //set port B to start with LED1  	
 
 ASSR   |= (1 << AS0);			//Use external 32kHz clock 
-SPCR   |= (1 << SPE) | (1 << MSTR);	//Enable SPI communication in mastermode
-TIMSK  |= (1 << TOIE0) | (1 << TOIE1); //| (1 << TOIE1);	//enable interrupt on compare & overflow of TCNT1
-TCCR0  |= (1 << CS00) | (1 << CS01);//SET CS02	//normal mode, prescale by 128
-TCCR1A |= (1 << COM1A1);		//Clear on Compare Match (OC1A)
+SPCR   |= (1 << SPE)   | (1 << MSTR);	//Enable SPI communication in mastermode
+SPSR    = (1 << SPI2X); 		//SPI at 2x speed (8 MHz)  
+TIMSK  |= (1 << TOIE0) | (1 << OCIE1A);	//enable interrupt on compare & overflow of TCNT1
+TCCR0  |= (1 << CS00)  | (1 << CS02);	//SET CS02	//normal mode, prescale by 128
+TCCR1A  = 0;
 TCCR1B |= (1 << WGM12); 		//CTC mode clear at TOP immediate
+TCCR1C  = 0;
+TCCR3A |= (1 << COM3C1) | (1 << WGM30);	//Set as output compare to OC3C (PE5)
+TCCR3A |= (1 << WGM32);
+TCCR3B |= (1 << WGM32) | (1 << CS00); 
+OCR1A  = 0xF0F;
+OCR3C  = 0x00;
+TCCR2  |= (1 << WGM21) | (1 << WGM20) | (1 << COM21) | (1 << CS21); // Set TCNT2 to fast pwm outputting to OC2 (PB7)
+ADCSRA |= (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0); 		    // Set ADC prescalar to 128 - 125KHz sample rate @ 16MHz
+ADMUX  |= (1 << REFS0); // Set ADC reference to AVCC
+ADMUX  |= (1 << ADLAR); // Left adjust ADC result to allow easy 8 bit reading
+ADCSRA |= (1 << ADFR);  // Set ADC to Free-Running Mode
+ADCSRA |= (1 << ADEN);  // Enable ADC
+ADCSRA |= (1 << ADSC);  // Start A2D Conversions
+lcd_init();
 sei();
+}
+
+//***********************************************************************************
+int main()
+{
+init();
 uint8_t  currentButtonsPressed = 0;	//Stores buttons that are currently pressed (holds value when pressed)
 uint8_t  currentDisplayDigit = 0;       //Current LED to display on (0 == 1's digit
 uint16_t displayValue = 0;	        //Current value to display on LEDs
 uint16_t alarmValue = 1;	        //Current value held by the alarm
 uint8_t  alarmActivated = OFF;		//If the Alarm is ON or OFF, initialize to OFF
+uint8_t  alarmON = OFF;
+uint8_t  alarmSET = ON;
+uint8_t  alarmOffset = 0;
 while(1){
   
+  // Button Functionality
+  // Pole Buttons
   currentButtonsPressed = ButtonCheck(currentButtonsPressed);
   
-  // Button Utility
-  switch(currentButtonsPressed)
+  // Buttons (1):
+  // Enter Setting mode (sets time or alarm)
+  if(currentButtonsPressed == 0x01)
   {
-    // Alarm Set Mode
-    case 0x01:
-      alarmValue     = AlarmSetMode();
-      displayValue   = alarmValue; 
-      break;
-
-    // Activate Alarm, Set L3 to indicate alarm set
-    case 0x03:
-      alarmActivated = ON;
-      segment_data[2] &= 0xFB;      
-      currentButtonsPressed = (0x00);
-      break;
-
-    // Snooze Alarm
-    case 0x04:
-      if(alarmActivated)
-      {
-        snoozeFlag = SNOOZEON;    
-      }
-      currentButtonsPressed = (0x00);
-      break;
-    
-    // Deactivate Alarm
-    case 0x08:
+      alarmValue     = AlarmSetMode(alarmOffset);
+      displayValue = alarmValue;   
+  // Buttons (2):
+  // Restart Mode (restarts everything) 
+  }else if(currentButtonsPressed == 0x02)
+  {
       alarmActivated = OFF;
       snoozeFlag = SNOOZEOFF;
       segment_data[2] |= (0xFF);      
       currentButtonsPressed = (0x00);
-      break;
-    
-    case 0x10:
-      currentTime = ClockSetMode();
-      break;
-
-    // Display Time as Normal
-    default:
-      displayValue = currentTime;
+      OCR3C = 0;
+      currentButtonsPressed = 0;	
+      currentDisplayDigit = 0;       
+      displayValue = 0;	        
+      alarmValue = 1;	        
+      alarmActivated = OFF;
+      alarmON = OFF;
+      clear_display();
+  
+  // Buttons (1, 2):
+  // Sets Alarm 
+  }else if(currentButtonsPressed == 0x03)
+  {
+      alarmActivated = ON;
+      segment_data[2] &= 0xFB;      
+      currentButtonsPressed = (0x00);
+  
+  // Buttons (3):
+  // SNOOZE if Alarm is Set/On    
+  }else if(currentButtonsPressed == 0x04)
+  {
+      if(alarmActivated)
+      {
+        TCCR1B &= (0 << CS11);
+        TCCR1B &= (0 << CS12);
+        snoozeFlag = SNOOZEON;	
+      }
+      currentButtonsPressed = (0x00);
+  
+  // Buttons (1, 3):
+  // Set Time
+  }else if(currentButtonsPressed == 0x05)
+  {
+    currentTime = AlarmSetMode(alarmOffset);
+    currentButtonsPressed = (0x00);
+  
+  // Display CurrentTime
+  
+  }else if(currentButtonsPressed == 0x08)
+  {
+    //alarmOffset ^= 0x01;
+    //currentButtonsPressed = (0x00);
+  }else{
+    displayValue = currentTime;
+    currentButtonsPressed = (0x00);    
   }
 
+  // Brightness of LED based off Photoresistor
+  OCR2  = 350 + (2 * (ADCH - 350));	   
+
+  // Turn ON alarm if SNOOZE timedout
   if(snoozeFlag == SNOOZEALARM)
   {
     alarmActivated = ON;
-    //segment_data[2] &= 0xFB;      
   }
 
-  // Alarm is reached and activated
+  // Alarm is reached and activated, either by timer or by snooze reached
   // Play alarm
   if(alarmActivated && ((currentTime == alarmValue) || (snoozeFlag == SNOOZEALARM)) && (snoozeFlag != SNOOZEON))
   {
-    segment_data[2] |= 0x04;      
+    TCCR1B |= (1 << WGM12) | (1<<CS11) | (1<<CS10); 		//CTC mode clear at TOP immediate
+    OCR3C   = VolumeSetMode();
+    alarmON = ON;
   }
   
+  // Display 'ALARM' on LCD
+  if(alarmON && alarmSET)
+  {
+    clear_display();
+    string2lcd("ALARM");
+    alarmSET = OFF; 
+  }
+ 
+  // Turn minute input to HH:MM 
   displayValue = ClockCounterCorrection(displayValue);
   
+  // Display to LED screen
   segsum(displayValue);						//Divide the decimal value to the segment_data[] array
-  currentDisplayDigit = displaySwitch(currentDisplayDigit);	//Display the current values stored in segment_data[] to current LED
-  }//while
+  currentDisplayDigit = displaySwitch(currentDisplayDigit);	//Display the current values stored in segment_data[] to current LED 
+
+}//while
 return 0;
 }//main
