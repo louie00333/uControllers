@@ -328,7 +328,7 @@ uint16_t AlarmSetMode(uint8_t alarmOffset)
   }else if(encodersDisplayValue > offsetVal)
   {
     if(!offsetVal){ encodersDisplayValue = 0;}
-    else{	    encodersDisplayValue = 60;}
+    else{encodersDisplayValue = 0;}//	    encodersDisplayValue = 60;}
   }
   return encodersDisplayValue;
 }
@@ -408,6 +408,7 @@ uint16_t displayValue = 0;	        //Current value to display on LEDs
 uint16_t alarmValue = 1;	        //Current value held by the alarm
 uint8_t  alarmActivated = OFF;		//If the Alarm is ON or OFF, initialize to OFF
 uint8_t  alarmON = OFF;
+uint8_t  alarmSET = ON;
 uint8_t  alarmOffset = 0;
 while(1){
   
@@ -495,10 +496,11 @@ while(1){
   }
   
   // Display 'ALARM' on LCD
-  if(alarmON)
+  if(alarmON && alarmSET)
   {
     clear_display();
-    string2lcd("ALARM"); 
+    string2lcd("ALARM");
+    alarmSET = OFF; 
   }
  
   // Turn minute input to HH:MM 
