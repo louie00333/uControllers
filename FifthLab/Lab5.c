@@ -1106,6 +1106,7 @@ while(1){
       snoozeFlag = SNOOZEOFF;
       segment_data[2] |= (0xFF);      
       currentButtonsPressed = (0x00);
+    buttonPos = 0;  
       OCR3C = 0;
       currentButtonsPressed = 0;	
       currentDisplayDigit = 0;       
@@ -1124,6 +1125,7 @@ while(1){
       alarmGlobal = ON;
       segment_data[2] &= 0xFB;      
       currentButtonsPressed = (0x00);
+    buttonPos = 0;  
   
   // Buttons (3):
   // SNOOZE if Alarm is Set/On    
@@ -1138,6 +1140,7 @@ while(1){
         alarmSET = ON;
       }
       currentButtonsPressed = (0x00);
+    buttonPos = 0;  
   
   // Buttons (1, 3):
   // Set Time
@@ -1145,6 +1148,7 @@ while(1){
   {
     currentTime = AlarmSetMode(alarmOffset);
     currentButtonsPressed = (0x00);
+    buttonPos = 0;  
   
   // Display CurrentTime
   
@@ -1155,7 +1159,6 @@ while(1){
   }else{
     displayValue = currentTime;
     currentButtonsPressed = (0x00);  
-    buttonPos = 0;  
   }
 
   // Brightness of LED based off Photoresistor
