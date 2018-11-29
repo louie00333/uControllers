@@ -861,8 +861,15 @@ ISR(TIMER0_OVF_vect)
   }
 }
 
-char uart_buff[42] = {' '};
 
+//***********************************************************************************
+//                                   ISR(USART0_RX_vect)                                    
+// Triggers when uart message has sent a single character
+// fills buffer with message being received 
+// Once SPACE char is received message is considered over
+// When message is over, reset counter for filling buffer, and indicate message sent
+//*********************************************************************************
+char uart_buff[42] = {' '};
 ISR(USART0_RX_vect)
 {
   static uint8_t counter = 0;
@@ -876,12 +883,6 @@ ISR(USART0_RX_vect)
   {
     counter++;
   }
-  //lcd_string_array2[counter] = uart_getc();
-  //(*lcd_string_array2) = uart_getc();
-  //lcd_string_array2[0] = uart_getc();
-  //string2lcd(lcd_string_array2);//lcd_string_array);//................ //send the string to LCD (lcd_functions)
-  
-  //if(counter == 2){ counter = 1; }
 }
 
 
@@ -972,8 +973,7 @@ void LocalTempSensor(uint16_t lm73_temp)
   lm73_temp |= lm73_rd_buf[1];//................ //"OR" in the low temp byte to lm73_temp 
   itoa(lm73_temp>>7 , lcd_string_array, 10);//................ //convert to string in array with itoa() from avr-libc                           
 
-  // Determine if value changed, if it did update
-//if(strcmp(previous_LCD_message, LCD_message)){  
+  // Add message to LCD_message buffer
   LCD_message[0] = 'I';
   LCD_message[1] = 'N';
   LCD_message[2] = 'T';
@@ -991,6 +991,7 @@ void LocalTempSensor(uint16_t lm73_temp)
   LCD_message[14] = ' ';
   LCD_message[15] = ' ';
   
+  // Print out either empty spaces or ALARM if alarm activated
   uint8_t fill;
   if(alarmGlobal == OFF)
   {
@@ -1009,14 +1010,13 @@ void LocalTempSensor(uint16_t lm73_temp)
     fill++;
   }
   
+  // Print to LCD if data has completed sending
+  // Also needs the encoders to not be in use
   if((buttonPos == 0) && data_complete)
   {
     refresh_lcd(LCD_message); 
   }
-// } 
-//  strcpy(previous_LCD_message, LCD_message);
-
-  }
+}
 //***********************************************************************************
 //				void init()
 // Initialize all of the registers at the start of main

@@ -52,7 +52,8 @@ while(1){          //main while loop
     lm73_temp = (lm73_temp<<8);//................ //shift it into upper byte 
     lm73_temp |= lm73_rd_buf[1];//................ //"OR" in the low temp byte to lm73_temp 
     itoa(lm73_temp>>7 , lcd_string_array, 10);//................ //convert to string in array with itoa() from avr-libc                           
-    //uart_puts(lcd_string_array);
+    
+    // Send message to atmega128, end with a ' ' character
     uart_putc(lcd_string_array[0]);
     uart_putc(lcd_string_array[1]);
     uart_putc(' ');
