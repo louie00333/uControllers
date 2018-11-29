@@ -1,10 +1,10 @@
 SHELL               = /bin/bash
-PRG                 = Lab5
-OBJS                = Lab5.o hd44780.o twi_master.o uart_functions.o lm73_functions_skel.o  
-SRCS                = Lab5.c hd44780.c twi_master.c uart_functions.c lm73_functions_skel.c
-MCU_TARGET          = atmega128
-F_CPU               = 16000000UL
-PROGRAMMER_TARGET   = m128
+PRG                 = atMega48
+OBJS                = atMega48.o lm73_functions_skel.o twi_master.o uart_functions_m48.o
+SRCS                = atMega48.c lm73_functions_skel.c twi_master.c uart_functions_m48.c 
+MCU_TARGET          = atmega48
+F_CPU               = 8000000UL
+PROGRAMMER_TARGET   = m48
 
 #agressive optimization
 OPTIMIZE       = -O2    # options are 1, 2, 3, s

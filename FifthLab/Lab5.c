@@ -39,6 +39,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include "hd44780.h"
+#include "lm73_functions_skel.h"
+#include "twi_master.h"
+#include "uart_functions.h"
 
 // holds data to be sent to the segments. logic zero turns segment on
 uint8_t segment_data[5] = {255,255,255,255,255}; 
@@ -57,7 +60,26 @@ volatile uint8_t snoozeFlag=0;
 // Holds value that stores the time of the clock
 volatile uint16_t currentTime = 0;
 
+// Indicates whether Dec or Hex mode
 uint8_t DecHex = 10;
+
+//True when data sent from uart is complete
+uint8_t data_complete = 0;
+
+//Holds data that is sent to LCD
+char LCD_message[42] = {' '};
+
+//Global indicating alarm is set
+uint8_t alarmGlobal = OFF;
+
+//Button in position 1
+uint8_t buttonPos = 0;
+
+char    lcd_string_array[16];  //holds a string to refresh the LCD
+uint8_t i;                     //general purpose index
+
+extern uint8_t lm73_wr_buf[2];//................ 
+extern uint8_t lm73_rd_buf[2];//................
 
 void song0(uint16_t note); //Beaver Fight Song
 //Mute is on PORTD
@@ -811,6 +833,7 @@ ISR(TIMER0_OVF_vect)
   static uint8_t currentSeconds = 0;
   static uint8_t snoozeTimer = 0;
   segment_data[2] ^= 0x03;   
+  // Second Counter
   if(currentSeconds < 60)
   {
     if(snoozeFlag == SNOOZEON)
@@ -818,6 +841,7 @@ ISR(TIMER0_OVF_vect)
       snoozeTimer++;
       segment_data[2] ^= 0x04;
     }
+    
     currentSeconds++;
   }else
   {
@@ -836,6 +860,30 @@ ISR(TIMER0_OVF_vect)
     beat++;
   }
 }
+
+char uart_buff[42] = {' '};
+
+ISR(USART0_RX_vect)
+{
+  static uint8_t counter = 0;
+  uart_buff[counter] = UDR0;
+  UDR0 = 0;
+  if(uart_buff[counter] == ' ')
+  {
+    data_complete = 1;
+    counter = 0;
+  }else
+  {
+    counter++;
+  }
+  //lcd_string_array2[counter] = uart_getc();
+  //(*lcd_string_array2) = uart_getc();
+  //lcd_string_array2[0] = uart_getc();
+  //string2lcd(lcd_string_array2);//lcd_string_array);//................ //send the string to LCD (lcd_functions)
+  
+  //if(counter == 2){ counter = 1; }
+}
+
 
 //***********************************************************************************
 //                                   ISR(TIMER1_OVF_vect)                                    
@@ -910,6 +958,66 @@ uint16_t VolumeSetMode()
 }
 
 //***********************************************************************************
+//				void LocalTempSensor()
+// Checks the temperature of the onboard temperature sensor
+// Outputs the temperature to the LCD screen
+//***********************************************************************************
+void LocalTempSensor(uint16_t lm73_temp)
+{
+  static char previous_LCD_message[42];
+  twi_start_rd(LM73_READ,lm73_rd_buf,2);//................ //read temperature data from LM73 (2 bytes) 
+  _delay_us(500);    //wait for it to finish
+  lm73_temp = lm73_rd_buf[0];//................ //save high temperature byte into lm73_temp
+  lm73_temp = (lm73_temp<<8);//................ //shift it into upper byte 
+  lm73_temp |= lm73_rd_buf[1];//................ //"OR" in the low temp byte to lm73_temp 
+  itoa(lm73_temp>>7 , lcd_string_array, 10);//................ //convert to string in array with itoa() from avr-libc                           
+
+  // Determine if value changed, if it did update
+//if(strcmp(previous_LCD_message, LCD_message)){  
+  LCD_message[0] = 'I';
+  LCD_message[1] = 'N';
+  LCD_message[2] = 'T';
+  LCD_message[3] = ':';
+  LCD_message[4] = lcd_string_array[0];
+  LCD_message[5] = lcd_string_array[1];
+  LCD_message[6] = ' ';
+  LCD_message[7] = 'E';
+  LCD_message[8] = 'X';
+  LCD_message[9] = 'T';
+  LCD_message[10] = ':';
+  LCD_message[11] = uart_buff[1];
+  LCD_message[12] = uart_buff[2];
+  LCD_message[13] = uart_buff[3];
+  LCD_message[14] = ' ';
+  LCD_message[15] = ' ';
+  
+  uint8_t fill;
+  if(alarmGlobal == OFF)
+  {
+    fill = 16;
+  }else{
+    LCD_message[16] = 'A';
+    LCD_message[17] = 'L';
+    LCD_message[18] = 'A';
+    LCD_message[19] = 'R';
+    LCD_message[20] = 'M';
+    fill = 21;
+  }
+  while(fill != 41)
+  {
+    LCD_message[fill] = ' ';
+    fill++;
+  }
+  
+  if((buttonPos == 0) && data_complete)
+  {
+    refresh_lcd(LCD_message); 
+  }
+// } 
+//  strcpy(previous_LCD_message, LCD_message);
+
+  }
+//***********************************************************************************
 //				void init()
 // Initialize all of the registers at the start of main
 //
@@ -949,13 +1057,17 @@ ADCSRA |= (1 << ADEN);  // Enable ADC
 ADCSRA |= (1 << ADSC);  // Start A2D Conversions
 lcd_init();
 music_init();
+init_twi();//................ //initalize TWI (twi_master.h)  
+uart_init();
 sei();
+
 }
 
 //***********************************************************************************
 int main()
 {
 init();
+uint16_t lm73_temp;  			//a place to assemble the temperature from the lm73
 uint8_t  currentButtonsPressed = 0;	//Stores buttons that are currently pressed (holds value when pressed)
 uint8_t  currentDisplayDigit = 0;       //Current LED to display on (0 == 1's digit
 uint16_t displayValue = 0;	        //Current value to display on LEDs
@@ -964,6 +1076,14 @@ uint8_t  alarmActivated = OFF;		//If the Alarm is ON or OFF, initialize to OFF
 uint8_t  alarmON = OFF;
 uint8_t  alarmSET = ON;
 uint8_t  alarmOffset = 0;
+
+//set LM73 mode for reading temperature by loading pointer register
+lm73_wr_buf[0] = (&lm73_temp);		//load lm73_wr_buf[0] with temperature pointer address
+twi_start_wr(LM73_WRITE,lm73_wr_buf,2); //start the TWI write process
+_delay_ms(2);    			//wait for the xfer to finish
+
+clear_display(); //clean up the display
+
 while(1){
   
   // Button Functionality
@@ -974,6 +1094,7 @@ while(1){
   // Enter Setting mode (sets time or alarm)
   if(currentButtonsPressed == 0x01)
   {
+      buttonPos    = 1;
       alarmValue   = AlarmSetMode(alarmOffset);
       displayValue = alarmValue;   
   // Buttons (2):
@@ -981,6 +1102,7 @@ while(1){
   }else if(currentButtonsPressed == 0x02)
   {
       alarmActivated = OFF;
+      alarmGlobal    = OFF;
       snoozeFlag = SNOOZEOFF;
       segment_data[2] |= (0xFF);      
       currentButtonsPressed = (0x00);
@@ -989,7 +1111,8 @@ while(1){
       currentDisplayDigit = 0;       
       displayValue = 0;	        
       alarmValue = 1;	        
-      alarmActivated = OFF;
+      //alarmActivated = OFF;
+      //alarmGlobal    = OFF;
       alarmON = OFF;
       clear_display();
   
@@ -998,10 +1121,9 @@ while(1){
   }else if(currentButtonsPressed == 0x03)
   {
       alarmActivated = ON;
+      alarmGlobal = ON;
       segment_data[2] &= 0xFB;      
       currentButtonsPressed = (0x00);
-      clear_display();
-      string2lcd("ALARM");
   
   // Buttons (3):
   // SNOOZE if Alarm is Set/On    
@@ -1032,7 +1154,8 @@ while(1){
     //currentButtonsPressed = (0x00);
   }else{
     displayValue = currentTime;
-    currentButtonsPressed = (0x00);    
+    currentButtonsPressed = (0x00);  
+    buttonPos = 0;  
   }
 
   // Brightness of LED based off Photoresistor
@@ -1051,6 +1174,7 @@ while(1){
   if(snoozeFlag == SNOOZEALARM)
   {
     alarmActivated = ON;
+    alarmGlobal = ON;
   }
 
   // Alarm is reached and activated, either by timer or by snooze reached
@@ -1060,17 +1184,17 @@ while(1){
     TCCR1B |= (1 << WGM12) | (1<<CS11) | (1<<CS10); 		//CTC mode clear at TOP immediate
     OCR3C   = VolumeSetMode();
     alarmON = ON;
+    buttonPos = 1;
   }
   
   // Display 'ALARM' on LCD
   if(alarmActivated && alarmSET)
   {
     music_on();
-    clear_display();
-    string2lcd("ALARM");
     alarmSET = OFF; 
   }
- 
+  
+  LocalTempSensor(lm73_temp);
   // Turn minute input to HH:MM 
   displayValue = ClockCounterCorrection(displayValue);
   
