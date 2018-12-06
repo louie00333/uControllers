@@ -493,8 +493,9 @@ void LocalTempSensor(uint16_t lm73_temp)
 
 //***********************************************************************************
 //				void rdaio_init()
-// Initialize all of the registers at the start of main
-//
+// Initialize the radio to work as well as set the frequency and reseting the pins 
+// used for the radio
+// *ROGERS CODE* Thanks Roger!
 //***********************************************************************************
 void radio_init()
 {
