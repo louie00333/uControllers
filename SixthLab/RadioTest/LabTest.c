@@ -26,7 +26,6 @@
 #define F_DIGIT     0b10001110
 #define DP_DIGIT    0b01111111
 #define COLON_DIGIT 0b00000100
-#define VOL_PIN PE5
 #define ON 1
 #define OFF 0
 #define CW 1
@@ -83,11 +82,9 @@ uint8_t i;                     //general purpose index
 extern uint8_t lm73_wr_buf[2];//................ 
 extern uint8_t lm73_rd_buf[2];//................
 
-extern uint8_t  si4734_wr_buf[9];
-extern uint8_t  si4734_rd_buf[9];
-extern uint8_t  si4734_tune_status_buf[8];
-extern volatile uint8_t STC_interrupt;     //indicates tune or seek is done(1 << PE2);
-extern volatile uint16_t current_fm_freq; //0x2706, arg2, arg3; 99.9Mhz, 200khz steps
+uint16_t current_fm_freq;
+uint16_t current_am_freq;
+uint16_t current_sw_freq;
 
 /*********************************************************************/
 //              SPI_read(uint8_t currentBarGraph)
@@ -99,7 +96,7 @@ uint16_t SPI_read(uint8_t currentBarGraph){
   while (bit_is_clear(SPSR,SPIF)){} //wait till 8 bits have been sent
   //PORTD = 0xFF;
   //PORTD = 0x00;
-  PORTE = 0x00;		//TODO: May cause problems with RADIO
+  PORTE = 0x00;
   PORTE = 0xFF;
   return(SPDR); //return incoming data from SPDR
 }
@@ -288,24 +285,6 @@ int8_t EncoderValueDirection(uint8_t currentEncoderValue)
   return 0;
 }
 
-//******************************************************************************
-//                          External Interrupt 7 ISR                     
-// Handles the interrupts from the radio that tells us when a command is done.
-// The interrupt can come from either a "clear to send" (CTS) following most
-// commands or a "seek tune complete" interrupt (STC) when a scan or tune command
-// like fm_tune_freq is issued. The GPIO2/INT pin on the Si4734 emits a low
-// pulse to indicate the interrupt. I have measured but the datasheet does not
-// confirm a width of 3uS for CTS and 1.5uS for STC interrupts.
-//
-// I am presently using the Si4734 so that its only interrupting when the 
-// scan_tune_complete is pulsing. Seems to work fine. (12.2014)
-//
-// External interrupt 7 is on Port E bit 7. The interrupt is triggered on the
-// rising edge of Port E bit 7.  The i/o clock must be running to detect the
-// edge (not asynchronouslly triggered)
-//******************************************************************************
-ISR(INT7_vect){STC_interrupt = TRUE;}
-
 //***********************************************************************************
 //                                   ISR(TIMER0_OVF_vect)                                    
 // Triggered when TimerCounter0 overflows (every second)
@@ -490,58 +469,6 @@ void LocalTempSensor(uint16_t lm73_temp)
     refresh_lcd(LCD_message); 
   }
 }
-
-//***********************************************************************************
-//				void rdaio_init()
-// Initialize all of the registers at the start of main
-//
-//***********************************************************************************
-void radio_init()
-{
-//Port E inital values and setup.  This may be different from yours for bits 0,1,6.
-
-//                           DDRE:  0 0 0 0 1 0 1 1
-//   (^ edge int from radio) bit 7--| | | | | | | |--bit 0 USART0 RX
-//(shift/load_n for 74HC165) bit 6----| | | | | |----bit 1 USART0 TX
-//                           bit 5------| | | |------bit 2 (new radio reset, active high)
-//                  (unused) bit 4--------| |--------bit 3 (TCNT3 PWM output for volume control)
-
-DDRE  |= 0x04; //Port E bit 2 is active high reset for radio 
-DDRE  |= 0x40; //Port E bit 6 is shift/load_n for encoder 74HC165
-DDRE  |= 0x08; //Port E bit 3 is TCNT3 PWM output for volume
-DDRE  |= VOL_PIN;
-PORTE |= 0x04; //radio reset is on at powerup (active high)
-PORTE |= 0x40; //pulse low to load switch values, else its in shift mode
-
-
-//Given the hardware setup reflected above, here is the radio reset sequence.
-//hardware reset of Si4734
-PORTE &= ~(1<<PE7); //int2 initially low to sense TWI mode
-DDRE  |= 0x80;      //turn on Port E bit 7 to drive it low
-PORTE |=  (1<<PE2); //hardware reset Si4734 
-_delay_us(200);     //hold for 200us, 100us by spec         
-PORTE &= ~(1<<PE2); //release reset 
-_delay_us(30);      //5us required because of my slow I2C translators I suspect
-                    //Si code in "low" has 30us delay...no explaination
-DDRE  &= ~(0x80);   //now Port E bit 7 becomes input from the radio interrupt
-
-//Once its setup, you can set the station and get the received signal strength.
-
-current_fm_freq = 8870; //0x2706, arg2, arg3; 99.9Mhz, 200khz steps
-fm_pwr_up();            //power up radio
-_delay_ms(300);
-while(twi_busy()){} //spin while TWI is busy 
-fm_tune_freq();     //tune to frequency      
-}
-
-//RADIO ON
-void radio_on()
-{
-fm_pwr_up();            //power up radio
-_delay_ms(300);
-while(twi_busy()){} //spin while TWI is busy 
-fm_tune_freq();     //tune to frequency      
-}
 //***********************************************************************************
 //				void init()
 // Initialize all of the registers at the start of main
@@ -555,9 +482,8 @@ void init()
 //  TCNT3 - Fast PWM  | Output to PE5 (OC3C)				!Controls volume to Audio Amp!
 DDRA  = 0xFF;	      		    //set port A as input  				
 DDRB  = 0xFF; 	      		    //set port B as outputs
-DDRD  |= (1 << PD7);   		    //Sets PortD pin2 to output
-DDRE  |= (1 << PE5) | (1 << PE6);   //Sets PortE Pin 6 & 5 to output
-DDRE  |= (1 << PE2);		    //Sets PortE Pin 2 for Radio_reset to output
+DDRD  |= (1 << PD7);   		    //Sets Port pin2 D to output
+DDRE  |= (1 << PE5) | (1 << PE6);   //Sets Port pin6 E to output
 PORTD = 0x00;   		    //set port D to LOW
 PORTB = 0x10;   		    //set port B to start with LED1  	
 
@@ -570,10 +496,10 @@ TCCR1A  = 0;
 TCCR1B |= (1 << WGM12); 		//CTC mode clear at TOP immediate
 TCCR1C  = 0;
 TCCR3A |= (1 << COM3C1) | (1 << WGM30);	//Set as output compare to OC3C (PE5)
-TCCR3A |= (1 << WGM32);
+//TCCR3A |= (1 << WGM32);
 TCCR3B |= (1 << WGM32) | (1 << CS00); 
 OCR1A  = 0xF0F;
-//OCR3C  = 0xFF;		//Volume
+OCR3C  = 0x00;
 TCCR2  |= (1 << WGM21) | (1 << WGM20) | (1 << COM21) | (1 << CS21); // Set TCNT2 to fast pwm outputting to OC2 (PB7)
 ADCSRA |= (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0); 		    // Set ADC prescalar to 128 - 125KHz sample rate @ 16MHz
 ADMUX  |= (1 << REFS0); // Set ADC reference to AVCC
@@ -586,10 +512,8 @@ init_twi();//................ //initalize TWI (twi_master.h)
 uart_init();
 sei();
 
-radio_init();
-// Radio Init;
-//set to KRKT radio albany
 }
+
 //***********************************************************************************
 int main()
 {
@@ -681,7 +605,6 @@ while(1){
   
   }else if(currentButtonsPressed == 0x08)
   {
-    radio_on();
     //alarmOffset ^= 0x01;
     //currentButtonsPressed = (0x00);
   }else{
@@ -712,12 +635,10 @@ while(1){
   // Play alarm
   if(alarmActivated && ((currentTime == alarmValue) || (snoozeFlag == SNOOZEALARM)) && (snoozeFlag != SNOOZEON) && (currentButtonsPressed != 0x01))
   {
-    //TCCR1B |= (1 << WGM12) | (1<<CS11) | (1<<CS10); 		//CTC mode clear at TOP immediate
+    TCCR1B |= (1 << WGM12) | (1<<CS11) | (1<<CS10); 		//CTC mode clear at TOP immediate
     OCR3C   = VolumeSetMode();
     alarmON = ON;
-    radio_init(); 
     buttonPos = 1;
-    OCR3C  = 0x00;		//Volume
   }
   
   // Display 'ALARM' on LCD
